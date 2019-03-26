@@ -96,7 +96,8 @@ class PackDSA3X17(object):
             tmult = 1e6 if ttype==1 else 1e3
             t1 = self.buf[0,104:108].view(np.int32)[0]
         t2 = self.buf[self.samplesread-1,104:108].view(np.int32)[0]
-        dt = (t2 - t1) / (tmult * (self.samplesread-1))
+        ns = max(1, self.samplesread-1)
+        dt = (t2 - t1) / (tmult * ns)
         return dt
         
     def clear(self):
@@ -184,8 +185,8 @@ class PackET3217(object):
         tmult = 1e6 if ttype==1 else 1e3
         t1 = self.buf[0,104:108].view(np.int32)[0]
         t2 = self.buf[self.samplesread-1,104:108].view(np.int32)[0]
-        dt = (t2 - t1) / (tmult * (self.samplesread-1))
-        return dt
+        ns = max(1, self.samplesread-1)
+        dt = (t2 - t1) / (tmult * ns)
         return self.dt
         
     def clear(self):
@@ -382,7 +383,7 @@ class Scanivalve(object):
         else:
             return True
 
-    def list_any(self, command, timeout=1.0):
+    def list_any(self, command, timeout=0.2):
         """
         Most query commands of the DSA-3X17 consists of
         something like LIST S\n
