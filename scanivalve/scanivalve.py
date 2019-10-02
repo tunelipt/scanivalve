@@ -160,7 +160,6 @@ class PackET3217(object):
         self.acquiring = False
         #self.dataread = True
         
-
     def get_pressure(self):
         """
         Given a a buffer filled with frames, return the pressure 
@@ -326,9 +325,13 @@ class ScanivalveThread(threading.Thread):
         
 class Scanivalve(object):
     """
+    # Data Aquisition from DSA3217
+    
     Handles data acquisition from Scanivalve DSA-3217
 
     To initialize, the IP address of the scanivalve device should be used.
+
+    
     ```python
     import scanivalve
 
@@ -337,15 +340,24 @@ class Scanivalve(object):
     ```
     
     """
-    def __init__(self, ip='191.30.80.131', tinfo=True, port=23):
+    def __init__(self, ip='191.30.80.131', tinfo=True):
 
+        # Create the socket
+        
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.ip = ip
-        self.port = port
+        self.port = 23
 
         self.acquiring = False
+        self.s.settimeout(5)
+        # Connect to socket
+        try:
+            self.s.connect((self.ip,self.port))
+        except:
+            self.s = None
+            raise RuntimeError("Unable to connect to socket. Check network connection.")
 
-        self.s.connect((self.ip,self.port))
+        # Clear errors and configure the scanivalve
         self.clear()
         self.numchans = 16
         
@@ -353,6 +365,7 @@ class Scanivalve(object):
         self.PERIOD=500
         self.AVG=16
         self.time = 2 if tinfo else 0
+        
         self.set_var("BIN", 1)
         self.set_var("EU", 1)
         self.set_var("UNITSCAN", "PA")
@@ -364,6 +377,8 @@ class Scanivalve(object):
         self.set_var("PERIOD", self.PERIOD)
         self.set_var("FPS", self.FPS)
         self.dt = self.PERIOD*1e-6*16 * self.AVG
+
+        # Packets with pressure data depends on the parameter tinfo
         if tinfo:
             self.pack = PackET3217()
         else:
@@ -371,7 +386,7 @@ class Scanivalve(object):
 
         self.pack.allocbuffer(self.FPS)
         self.thread = None
-        
+        print("Configured socket")
         
     def is_pending(self, timeout=0.5):
         "Check whether the scanivalve sent some information"
@@ -388,7 +403,8 @@ class Scanivalve(object):
         Most query commands of the DSA-3X17 consists of
         something like LIST S\n
 
-        
+        This method simplys sends the LIST command to the scanivalve and returns
+        the data.
         """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
@@ -406,7 +422,8 @@ class Scanivalve(object):
 
     def list_any_map(self, command, timeout=0.5):
         """
-        Takes data obtained from `list_any` method and builds a 
+        Takes data obtained from `list_any` method and builds a dictionary with the
+        different parameters
         """
 
         if self.acquiring:
@@ -428,6 +445,10 @@ class Scanivalve(object):
     
 
     def set_var(self, var, val):
+        """
+        Set the value of a parameter in the scanivalve by using the command
+        SET var val
+        """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
 
@@ -435,11 +456,17 @@ class Scanivalve(object):
         self.s.send(cmd)
 
     def get_model(self):
+        """
+        Returns the model of the scanivalve
+        """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
         return self.list_any_map("I")["MODEL"]
         
     def stop(self):
+        """
+        Stop the scanivalve
+        """
         self.s.send(b"STOP\n")
         #if self.acquiring:
             
@@ -449,11 +476,17 @@ class Scanivalve(object):
             buffer = buffer + self.s.recv(1492)
         return None
     def clear(self):
+        """
+        Clear the error buffer in the scanivalve
+        """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
         self.s.send(b"CLEAR\n")
     
     def error(self):
+        """
+        Returns a list of errors detected by the scanivalve.
+        """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
         self.s.send(b"ERROR\n")
@@ -467,8 +500,11 @@ class Scanivalve(object):
     
         
         
-        
+    
     def config(self, FPS=1, PERIOD=500, AVG=16):
+        """
+        Configures data aquisition 
+        """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
         self.PERIOD = clamp(PERIOD, 125, 65000)
