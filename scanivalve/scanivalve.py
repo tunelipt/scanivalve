@@ -18,124 +18,56 @@ def clamp(x,min,max):
         return x
 
 
-
-class PackDSA3X17(object):
-
-    def __init__(self, s, packlen=112, packid=0x07, rpress=slice(8, 72),
-                 rttype=slice(108,112), rtime=slice(104,108)):
-        self.buf = None
-        self.acquiring = False
-        self.samplesread = 0
-        self.fps = 1
-        self.allocbuffer(1)
-        self.dataread = False
-        self.s = s
-        self.packlen = packlen
-        self.packid = packid
-        self.rpress = rpress
-        self.rtime = rtime
-        self.dt = None
-        return
+def check_server(ip='191.30.80.131', port=23, timeout=3):
+    """
+    # `check_server(ip, port, timeout)`
     
-    def setdt(self, dt):
-        self.dt = dt
-        return
-        
-    def allocbuffer(self, fps):
-        """
-        Allocates a buffer with `fps` elements
-        """
-        self.buf = np.zeros((fps, self.packlen), np.uint8)
-        self.fps = fps
+    Check if the server at `ip` on port `port` is responding.
 
-    def scan(self):
-        """
-        Execute the scan command and read the frames into a buffer.
-        """
-        s = self.s
-        dt = self.dt
-        fps = self.fps
-        s.settimeout(max(0.2, 3 * dt))
-        s.send(b"SCAN\n")
-        self.acquiring = True
-        try:
-            for i in range(fps):
-                s.recv_into(self.buf[i], self.packlen)
-                self.dataread = True # There is data read
-                self.samplesread = i+1
-        except:
-            self.acquiring = False
-            raise RuntimeError("Unaible to read frames from scanivalve")
-                
-        self.acquiring = False
+    It waits for `timeout` seconds before returning `False`
 
-    def get_pressure(self):
-        """
-        Given a a buffer filled with frames, return the pressure 
-        """
-        if not self.dataread:
-            raise RuntimeError("No pressure to read from scanivalve!")
-        nsamp = self.samplesread
-        press = np.zeros((nsamp, 16), np.float64)
-            
-        for i in range(nsamp):
-            np.copyto(press[i], self.buf[i,rpress].view(np.float32))
-                
-        return press
-        
-                          
-    def get_time(self):
-        """
-        Given a buffer filled with frames, return the time discretization.
-        """
-        
-        if not self.dataread:
-            raise RuntimeError("No pressure to read from scanivalve!")
-        if self.rtime is not None:
-            ttype = self.buf[0,self.rtype].view(np.int32)[0]
-            tmult = 1e6 if ttype==1 else 1e3
-            t1 = self.buf[0,104:108].view(np.int32)[0]
-        t2 = self.buf[self.samplesread-1,104:108].view(np.int32)[0]
-        ns = max(1, self.samplesread-1)
-        dt = (t2 - t1) / (tmult * ns)
-        return dt
-        
-    def clear(self):
-        if self.acquiring is not False:
-            raise RuntimeError("Still acquiring data from scanivalve!")
-        self.acquiring = False
-        self.samplesread = 0
-        self.dataread = False
-        
-    def isacquiring(self):
-        "Is the scanivalve acquiring data?"
-        return self.acquiring
-    
-    def read(self):
-        "Read the data from the buffers and return a pair with pressure and sampling rate"
-        
-        if self.samplesread > 0:
-            p = self.get_pressure()
-            dt = self.get_time()
-            return p, 1.0/dt
-        else:
-            raise RuntimeError("Nothing to read from scanivalve!")
+    ## Arguments
+    * `ip`: IP address of the server
+    * `port`: Port number the connection should be attempted
+    * `timeout`: Time in seconds that the function should wait before giving up
+    ## Return
+    * `True` if the server responded
+    * `False`otherwise 
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(5)
+    try:
+        s.connect((ip,port))
+        return True
+    except:
+        return False
 
 
-class PackET3217(object):
+
+class Packet(object):
     """
     Handles EU with time DSA-3217 packets
     """
     
-    def __init__(self):
-        self.buf = None
-        self.packlen = 112
-        self.packid  = 0x07
+    def __init__(self, packet_info):
+        self.model = packet_info['model']
+        self.packlen = packet_info['packlen']
+        self.press = packet_info['press']
+        self.temp = packet_info['temp']
+        self.t = packet_info['t']
+        self.time = packet_info['time']
+        self.tunit = packet_info['tunit']
+        
         self.acquiring = False
         self.samplesread = 0
         self.fps = 1
+
+        self.buf = None
         self.allocbuffer(1)
         self.dataread = False
+        self.time1 = None
+        self.time2 = None
+        self.timeN = None
         
     def allocbuffer(self, fps):
         """
@@ -151,14 +83,23 @@ class PackET3217(object):
         self.dt = dt
         s.settimeout(max(0.5, 3 * dt))
         s.send(b"SCAN\n")
+
         self.acquiring = True
-        for i in range(fps):
+        self.time1 = time.monotonic()
+
+        s.recv_into(self.buf[0], self.packlen)
+
+        self.time2 = time.monotonic()
+        self.timeN = self.time2
+        self.dataread = True # There is data read
+        self.samplesread = 1
+
+        for i in range(1,fps):
             s.recv_into(self.buf[i], self.packlen)
-            self.dataread = True # There is data read
+            self.timeN = time.monotonic()
             self.samplesread = i+1
-        #self.samplesread = fps
+
         self.acquiring = False
-        #self.dataread = True
         
     def get_pressure(self):
         """
@@ -168,21 +109,32 @@ class PackET3217(object):
         if not self.dataread:
             raise RuntimeError("No pressure to read from scanivalve!")
         nsamp = self.samplesread
-        press = np.zeros((nsamp, 16), np.float64)
+        P = np.zeros((nsamp, 16), np.float64)
             
         for i in range(nsamp):
-            np.copyto(press[i], self.buf[i,8:72].view(np.float32))
+            np.copyto(P[i], self.buf[i,self.press].view(np.float32))
                 
-        return press
+        return P
         
                           
-    def get_time(self):
+    def get_time(self, meas=True):
         """
         Return the sampling time calculated from acquisition parameters.
         """
-        ttype = self.buf[0,108:112].view(np.int32)[0]
+            
+        nsamp = self.samplesread
+        if meas:
+            if nsamp > 4:
+                return (self.timeN - self.time2) / (nsamp-1)
+            elif nsamp > 0:
+                return (self.timeN - self.time1) / nsamp
+                
+        if not self.t:
+            return -1000.0
+        
+        ttype = self.buf[0,self.tunit].view(np.int32)[0]
         tmult = 1e6 if ttype==1 else 1e3
-        t1 = self.buf[0,104:108].view(np.int32)[0]
+        t1 = self.buf[0,self.time].view(np.int32)[0]
         t2 = self.buf[self.samplesread-1,104:108].view(np.int32)[0]
         ns = max(1, self.samplesread-1)
         dt = (t2 - t1) / (tmult * ns)
@@ -194,107 +146,25 @@ class PackET3217(object):
         self.acquiring = False
         self.samplesread = 0
         self.dataread = False
+        self.time1 = None
+        self.time2 = None
+        self.timeN = None
         
         
     def isacquiring(self):
         "Is the scanivalve acquiring data?"
         return self.acquiring
     
-    def read(self):
+    def read(self, meas=True):
         "Read the data from the buffers and return a pair with pressure and sampling rate"
         if self.samplesread > 0:
             p = self.get_pressure()
-            dt = self.get_time()
+            dt = self.get_time(meas)
             return p, 1.0/dt
         else:
             raise RuntimeError("Nothing to read from scanivalve!")
     
     
-        
-
-    
-    
-
-class PackEU3217(object):
-    "Handles DSA-3217 EU packets"
-    def __init__(self):
-        self.buf = None
-        self.packlen = 104
-        self.packid  = 0x05
-        self.acquiring = False
-        self.samplesread = 0
-        self.fps = 1
-        self.dt = 0.0
-        self.allocbuffer(1)
-        self.dataread = False
-        
-    def allocbuffer(self, fps):
-        """
-        Allocates a buffer with `fps` elements
-        """
-        self.buf = np.zeros((fps, self.packlen), np.uint8)
-        self.fps = fps
-        
-    def scan(self, s, dt):
-        """
-        Execute the scan command and read the frames into a buffer.
-        """
-        fps = self.fps
-        self.dt = dt
-        s.settimeout(max(0.5, 3 * dt))
-        s.send(b"SCAN\n")
-        self.acquiring = True
-        for i in range(fps):
-            s.recv_into(self.buf[i], self.packlen)
-            self.dataread = True # There is data read
-            self.samplesread = i+1
-        #self.samplesread = fps
-        self.acquiring = False
-        #self.dataread = True
-        
-
-    def get_pressure(self):
-        """
-        Given a a buffer filled with frames, return the pressure 
-        """
-
-        if not self.dataread:
-            raise RuntimeError("No pressure to read from scanivalve!")
-        nsamp = self.samplesread
-        press = np.zeros((nsamp, 16), np.float64)
-            
-        for i in range(nsamp):
-            np.copyto(press[i], self.buf[i,8:72].view(np.float32))
-                
-        return press
-        
-                          
-    def get_time(self):
-        """
-        Return the sampling time calculated from acquisition parameters.
-        """
-        return self.dt
-        
-    def clear(self):
-        if self.acquiring is not False:
-            raise RuntimeError("Still acquiring data from scanivalve!")
-        self.acquiring = False
-        self.samplesread = 0
-        self.dataread = False
-        
-        
-    def isacquiring(self):
-        "Is the scanivalve acquiring data?"
-        return self.acquiring
-    
-    def read(self):
-        "Read the data from the buffers and return a pair with pressure and sampling rate"
-        if self.samplesread > 0:
-            p = self.get_pressure()
-            dt = self.get_time()
-            return p, 1.0/dt
-        else:
-            raise RuntimeError("Nothing to read from scanivalve!")
     
     
 class ScanivalveThread(threading.Thread):
@@ -340,7 +210,7 @@ class Scanivalve(object):
     ```
     
     """
-    def __init__(self, ip='191.30.80.131', tinfo=True):
+    def __init__(self, ip='191.30.80.131', tinfo=False):
 
         # Create the socket
         
@@ -355,7 +225,7 @@ class Scanivalve(object):
             self.s.connect((self.ip,self.port))
         except:
             self.s = None
-            raise RuntimeError("Unable to connect to socket. Check network connection.")
+            raise RuntimeError("Unable to connect to scanivalve on IP:{}!".format(ip))
 
         # Clear errors and configure the scanivalve
         self.clear()
@@ -378,16 +248,41 @@ class Scanivalve(object):
         self.set_var("FPS", self.FPS)
         self.dt = self.PERIOD*1e-6*16 * self.AVG
 
-        # Packets with pressure data depends on the parameter tinfo
-        if tinfo:
-            self.pack = PackET3217()
-        else:
-            self.pack = PackEU3217()
+        self.packet_info = self.packet_info()
 
+        self.model = self.packet_info['model']
+        
+        self.pack = Packet(self.packet_info)
+        
         self.pack.allocbuffer(self.FPS)
         self.thread = None
-        print("Configured socket")
+
+    def packet_info(self, tinfo=True):
+        model = self.get_model().strip()
+        if model=='3017':
+            tinfo = False
+            packlen = 104
+            tt = None
+            tunit = None
+        elif model=='3217':
+            press = slice(8, 72)
+            temp = slice(72,104)
+            if tinfo:
+                packlen = 112
+                tt = slice(104, 108)
+                tunit = slice(108, 112)
+                
+            else:
+                packlen = 104
+                tt = None
+                tunit =  None
+        else:
+            raise RuntimeError("Model {} not recognized!".format(model))
         
+        return dict(model=model, packlen=packlen, press=press, temp=temp, t=tinfo, time=tt, tunit=tunit)
+            
+        
+
     def is_pending(self, timeout=0.5):
         "Check whether the scanivalve sent some information"
 
@@ -468,8 +363,8 @@ class Scanivalve(object):
         Stop the scanivalve
         """
         self.s.send(b"STOP\n")
-        #if self.acquiring:
-            
+        self.acquiring = False
+        self.thread = None
         time.sleep(0.2)
         buffer = b''
         while self.is_pending(0.5):
@@ -507,9 +402,16 @@ class Scanivalve(object):
         """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
-        self.PERIOD = clamp(PERIOD, 125, 65000)
-        self.FPS = clamp(FPS, 1, 2**30)
-        self.AVG = clamp(AVG, 1, 240)
+
+        if self.model=='3017':
+            self.PERIOD = clamp(PERIOD, 500, 62500)  # 325 if raw packets: not implemented!
+            self.FPS = clamp(FPS, 1, 2**31) # Could be 0. Not implemented for now!
+            self.AVG = clamp(AVG, 1, 32767)
+        else:
+            self.PERIOD = clamp(PERIOD, 125, 65000)
+            self.FPS = clamp(FPS, 1, 2**30) # Could be 0. Not implemented for now!
+            self.AVG = clamp(AVG, 1, 240)
+
         self.dt = self.PERIOD*1e-6*16 * self.AVG
         self.set_var("FPS", self.FPS)
         self.pack.allocbuffer(self.FPS)
@@ -534,6 +436,9 @@ class Scanivalve(object):
         
         
     def read(self):
+        if self.thread is None:
+            raise RuntimeError("Nothing to read")
+        
         self.thread.join()
         p, freq = self.pack.read()
         self.pack.clear()
@@ -546,6 +451,15 @@ class Scanivalve(object):
             return self.pack.samplesread
         else:
             raise RuntimeError("Scanivalve not reading")
+    def samplerate(self, meas=True):
+        if self.thread is not None:
+            dt = self.pack.get_time(True)
+            if dt < -1.0:
+                dt = self.dt
+            return 1.0/dt
+        else:
+            raise RuntimeError("Scanivalve not reading")
+        
     def isacquiring(self):
         if self.thread is not None:
             return self.pack.isacquring()
