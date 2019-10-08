@@ -5,9 +5,6 @@ import threading
 import time
 
 
-
-
-
 def clamp(x,min,max):
     "Clamps the value x between `min` and `max` "
     if x < min:
@@ -469,3 +466,6 @@ class Scanivalve(object):
     
         
     
+        
+
+        
