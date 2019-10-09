@@ -86,12 +86,16 @@ class ScaniGUI(QMainWindow):
         self.avg_ed.textChanged.emit(self.avg_ed.text())
 
         self.freqlab = QLabel("")
+        self.ttotlab = QLabel("")
+        
         
         gr1.addWidget(self.fps_ed, 0, 1)
         gr1.addWidget(self.period_ed, 1, 1)
         gr1.addWidget(self.avg_ed, 2, 1)
         gr1.addWidget(QLabel("Freq (Hz)"), 3, 0)
         gr1.addWidget(self.freqlab, 3, 1)
+        gr1.addWidget(QLabel("Tempo (s)"), 4, 0)
+        gr1.addWidget(self.ttotlab, 4, 1)
         
                       
         self.confgr.setEnabled(False)
@@ -143,6 +147,7 @@ class ScaniGUI(QMainWindow):
                 self.avg_ed.setText(avg)
 
                 self.freqlab.setText(str(1/self.dev.dt))
+                self.ttotlab.setText(str(self.dev.dt*int(fps)))
                 
                 if self.model=='3017':
                     self.period_val.setBottom(500)
@@ -195,7 +200,8 @@ class ScaniGUI(QMainWindow):
         self.dev.config(FPS=int(fps), AVG=int(avg), PERIOD=int(period))
 
         self.freqlab.setText("{:05.3f}".format(1/self.dev.dt))
-
+        self.ttotlab.setText("{:05.3f}".format(self.dev.dt * int(fps)))
+        
         return None
     def hard_zero(self):
         if self.dev is not None:
