@@ -463,7 +463,14 @@ class Scanivalve(object):
         else:
             raise RuntimeError("Scanivalve not reading")
         
-    
+    def close(self):
+        if self.acquiring:
+            self.stop()
+        self.thread = None
+        self.s.close()
+        self.s = None
+        
+            
         
     
         
