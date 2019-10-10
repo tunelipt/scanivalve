@@ -469,7 +469,14 @@ class Scanivalve(object):
         self.thread = None
         self.s.close()
         self.s = None
-        
+
+    def nchans(self):
+        return 16
+
+    def channames(self):
+        return ["{:02d}".format(i+1) for i in range(self.nchans())]
+    
+    
             
         
     
