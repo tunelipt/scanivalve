@@ -65,6 +65,7 @@ class Packet(object):
         self.time1 = None
         self.time2 = None
         self.timeN = None
+        self.stop_reading = False
         
     def allocbuffer(self, fps):
         """
@@ -92,6 +93,9 @@ class Packet(object):
         self.samplesread = 1
 
         for i in range(1,fps):
+            if self.stop_reading:
+                break
+            
             s.recv_into(self.buf[i], self.packlen)
             self.timeN = time.monotonic()
             self.samplesread = i+1
@@ -146,7 +150,7 @@ class Packet(object):
         self.time1 = None
         self.time2 = None
         self.timeN = None
-        
+        self.stop_reading = False
         
     def isacquiring(self):
         "Is the scanivalve acquiring data?"
@@ -161,7 +165,10 @@ class Packet(object):
         else:
             raise RuntimeError("Nothing to read from scanivalve!")
     
-    
+    def stop(self):
+        self.stop_reading = True
+        return None
+        
     
     
 class ScanivalveThread(threading.Thread):
@@ -179,10 +186,8 @@ class ScanivalveThread(threading.Thread):
         
 
     def run(self):
+        self.pack.clear()
         self.pack.scan(self.s, self.dt)
-        #p,freq = self.pack.read()
-        #self.pack.clear()
-        #return p, freq
        
     def isacquiring(self):
         return self.pack.isacquiring()
@@ -360,6 +365,9 @@ class Scanivalve(object):
         Stop the scanivalve
         """
         self.s.send(b"STOP\n")
+        if self.acquiring and self.thread is not None:
+            self.pack.stop()
+            
         self.acquiring = False
         self.thread = None
         time.sleep(0.2)
@@ -433,16 +441,20 @@ class Scanivalve(object):
         
         
     def read(self):
-        if self.thread is None:
-            raise RuntimeError("Nothing to read")
         
-        self.thread.join()
-        p, freq = self.pack.read()
-        self.pack.clear()
-        self.thread = None
-        self.acquiring = False
+        if self.thread is not None:
+            self.thread.join()
+
+        if self.pack.samplesread > 0:
+            p, freq = self.pack.read()
+            self.pack.clear()
+            self.thread = None
+            self.acquiring = False
+            return p, freq
+        else:
+            #raise RuntimeError("Nothing to read")
+            print("ERRO EM READ")
         
-        return p, freq
     def samplesread(self):
         if self.thread is not None:
             return self.pack.samplesread
