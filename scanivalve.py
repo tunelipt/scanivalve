@@ -94,6 +94,7 @@ class Packet(object):
 
         for i in range(1,fps):
             if self.stop_reading:
+                print("STOP_READING")
                 break
             
             s.recv_into(self.buf[i], self.packlen)
@@ -364,9 +365,9 @@ class Scanivalve(object):
         """
         Stop the scanivalve
         """
+        self.pack.stop_reading = True
+        self.pack.acquiring = False
         self.s.send(b"STOP\n")
-        if self.acquiring and self.thread is not None:
-            self.pack.stop()
             
         self.acquiring = False
         self.thread = None
@@ -381,6 +382,7 @@ class Scanivalve(object):
         """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
+        
         self.s.send(b"CLEAR\n")
     
     def error(self):
