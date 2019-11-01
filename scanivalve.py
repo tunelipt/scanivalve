@@ -491,7 +491,13 @@ class Scanivalve(object):
         return ["{:02d}".format(i+1) for i in range(self.nchans())]
     
     
-            
+    def list_config(self):
+        if self.acquiring:
+            raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
+        conf = dict(devtype='pressure', manufacturer='scanivalve', model=self.model,
+                    parameters=self.list_any_map('S'))
+        return conf
+    
         
     
         
