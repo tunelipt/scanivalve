@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="scanivalve",
-    py_modules=['scanivalve'],
+    py_modules=['scanivalve','scanigui'],
     version="0.1",
     author = "Paulo Jabardo",
     author_email = "pjabardo@gmail.com",
