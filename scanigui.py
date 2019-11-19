@@ -1,7 +1,7 @@
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import (QLabel, QGridLayout, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, qApp, QMenu,
                              QGroupBox, QPushButton, QApplication, QSlider, QMainWindow, QSplashScreen,
-                             QAction, QComboBox, QMessageBox, QProgressBar)
+                             QAction, QComboBox, QMessageBox, QProgressBar, QCheckBox)
 
 from PyQt5.QtCore import Qt, QRegExp, QEventLoop, QTimer
 
@@ -27,10 +27,12 @@ class ScaniConfig(QWidget):
             fps = initconfig['FPS']
             avg = initconfig['AVG']
             period = initconfig['PERIOD']
+            xtrig = initconfig['XSCANTRIG']
         else:
             fps = 1
             avg = 16
             period = 500
+            xtrig = False
             
         super(ScaniConfig, self).__init__(parent)
 
@@ -45,6 +47,8 @@ class ScaniConfig(QWidget):
         self.period = dict(val=period, w=None, validator=QIntValidator(150, 62000, self),
                            tip = "Tempo de leitura em cada sensor em μs",
                            xmin=150, xmax=65000)
+        self.xtrig = dict(val=xtrig, w=None, tip='Usar trigger externo?')
+        
         self.ip = ''
         self.draw_gui(ip)
         self.confg.setEnabled(False)
@@ -199,16 +203,21 @@ class ScaniConfig(QWidget):
         self.period['w'].textChanged.connect(self.check_state)
         self.period['w'].textChanged.emit(self.period['w'].text())
         hb3.addWidget(self.period['w'])
+        
 
         self.freql = QLabel("")
         self.ttotl = QLabel('')
         self.confb = QPushButton('Configurar')
         self.confb.setToolTip("Configurar a aquisição do scanivalve")
         self.confb.clicked.connect(self.config)
+
+        self.xtrig['w'] = QCheckBox("Trigger Externo")
+        self.xtrig['w'].setToolTip(self.xtrig['tip'])
         
         vb.addLayout(hb1)
         vb.addLayout(hb2)
         vb.addLayout(hb3)
+        vb.addWidget(self.xtrig['w'])
         vb.addWidget(self.freql)
         vb.addWidget(self.ttotl)
         vb.addWidget(self.confb)
@@ -253,8 +262,8 @@ class ScaniConfig(QWidget):
             fps = int(self.fps['w'].text())
             avg = int(self.avg['w'].text())
             period = int(self.period['w'].text())
-
-            self.scani.config(fps, period, avg)
+            xtrig = self.xtrig['w'].isChecked()
+            self.scani.config(FPS=fps, AVG=avg, PERIOD=period, XSCANTRIG=xtrig)
             self.display_config()
             return True
         except:
@@ -442,7 +451,8 @@ class ScaniConfig(QWidget):
         if self.connected:
             return dict(kind='daq', var='pressure',
                         device=dict(name='scanivalve', model=self.model, ip=self.scani.ip),
-                        config=dict(FPS=self.scani.FPS, PERIOD=self.scani.PERIOD, AVG=self.scani.AVG))
+                        config=dict(FPS=self.scani.FPS, PERIOD=self.scani.PERIOD,
+                                    AVG=self.scani.AVG, XSCANTRIG=self.scani.XSCANTRIG))
         return None
     
         

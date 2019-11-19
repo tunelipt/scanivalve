@@ -170,7 +170,7 @@ class Packet(object):
         self.stop_reading = True
         return None
         
-    
+ 
     
 class ScanivalveThread(threading.Thread):
     """
@@ -194,7 +194,8 @@ class ScanivalveThread(threading.Thread):
         return self.pack.isacquiring()
     
         
-        
+valid_lists = ['FPS', 'AVG', 'PERIOD', 'XSCANTRIG']
+
         
 class Scanivalve(object):
     """
@@ -237,6 +238,8 @@ class Scanivalve(object):
         self.FPS = 1
         self.PERIOD=500
         self.AVG=16
+        self.XSCANTRIG = 0
+        
         self.time = 2 if tinfo else 0
         
         self.set_var("BIN", 1)
@@ -403,13 +406,14 @@ class Scanivalve(object):
         
         
     
-    def config(self, FPS=1, PERIOD=500, AVG=16):
+    def config1(self, FPS=1, PERIOD=500, AVG=16, xtrig=False):
         """
         Configures data aquisition 
         """
         if self.acquiring:
             raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
 
+        XSCANTRIG = int(xtrig)
         if self.model=='3017':
             self.PERIOD = clamp(PERIOD, 500, 62500)  # 325 if raw packets: not implemented!
             self.FPS = clamp(FPS, 1, 2**31) # Could be 0. Not implemented for now!
@@ -424,6 +428,38 @@ class Scanivalve(object):
         self.pack.allocbuffer(self.FPS)
         self.set_var("AVG", self.AVG)
         self.set_var("PERIOD", self.PERIOD)
+        self.set_var("XSCANTRIG", XSCANTRIG)
+    def config(self, **kw):
+        """
+        Configures data aquisition 
+        """
+        if self.acquiring:
+            raise RuntimeError("Illegal operation. Scanivalve is currently acquiring data!")
+        isold = self.model=='3017'
+        for k in kw.keys():
+            K = k.upper()
+            if K == 'XSCANTRIG':
+                val = int(kw[k])
+                self.XSCANTRIG = val
+            elif K=='PERIOD':
+                x = int(kw[k])
+                val = clamp(x, 500, 62500)  if isold else clamp(x, 160, 650000)
+                self.PERIOD = val
+            elif K=='AVG':
+                x = int(kw[k])
+                val = clamp(x, 1, 32767) if isold else clamp(x, 1, 240)
+                self.AVG = val
+            elif K=='FPS':
+                x = int(kw[k])
+                val = clamp(x, 1, 2**31) if isold else clamp(x, 1, 2**30)
+                self.FPS = val
+                self.pack.allocbuffer(self.FPS)
+            else:
+                RuntimeError("Illegal configuration. SET {} {} not implemented!".format(K, kw[k]))
+
+            self.set_var(K, val)
+
+        self.dt = self.PERIOD*1e-6*16 * self.AVG
         
         
     def acquire(self):
